@@ -1,11 +1,9 @@
 import requests
 import datetime
 import os
-from bokeh.plotting import figure, output_file, show
-
-
-output_file("states.html")
-p = figure(title="Deaths per 100k", x_axis_label='Date', y_axis_label='Deaths per 100k')
+import _thread
+import time
+from threading import Thread
 
 us_state_abbrev = {
     'Alabama': 'AL',
@@ -66,25 +64,20 @@ us_state_abbrev = {
     'Wyoming': 'WY'
 }
 
-joined= {}
-
-# Collect census Data, A key from api.census.gov is required
-response = requests.get("https://api.census.gov/data/2019/pep/population?get=POP,NAME&for=state:*&key={}".format(os.environ['CENSUS_KEY']))
-states_pop = response.json()
-for state_pop in states_pop[1:]:
-    pop = int(state_pop[0])
-    state = us_state_abbrev[state_pop[1]]
+def collect_data(state, pop):
 
     file = open("data/covid-{}".format(state),'w')
     file.write('state,  date, deaths, deaths per 100k, total tested, tested %\n')
-    
+        
     start = datetime.datetime.strptime("20200403", "%Y%m%d")
     end = datetime.datetime.today()
     date_generated = [start + datetime.timedelta(days=x) for x in range(0, (end-start).days)]
-
+    
     deaths_per_capita =[]
     for date in date_generated:
+        print("https://covidtracking.com/api/v1/states/{}/{}.json".format(state, date.strftime("%Y%m%d")))
         response = requests.get("https://covidtracking.com/api/v1/states/{}/{}.json".format(state, date.strftime("%Y%m%d")))
+        print(response)
         state_covid = response.json()
         totalTestResults = int(state_covid['totalTestResults'])
         test_per_capita = (totalTestResults/pop) * 100
@@ -97,8 +90,25 @@ for state_pop in states_pop[1:]:
                                               death_per_capita, 
                                               totalTestResults, 
                                               test_per_capita))
-    p.line(date_generated, deaths_per_capita, legend_label=state, line_width=2)
     file.close()
 
 
-show(p)
+
+# Collect census Data, A key from api.census.gov is required
+response = requests.get("https://api.census.gov/data/2019/pep/population?get=POP,NAME&for=state:*&key={}".format(os.environ['CENSUS_KEY']))
+states_pop = response.json()
+threads = {}
+for state_pop in states_pop[1:]:
+    pop = int(state_pop[0])
+    state = us_state_abbrev[state_pop[1]]
+    threads[state] = Thread( target=collect_data, args=(state, pop) )
+    threads[state].start()
+    print(state)
+
+for state_pop in states_pop[1:]:
+    pop = int(state_pop[0])
+    state = us_state_abbrev[state_pop[1]]
+    threads[state].join()
+
+#while 1:
+    #pass
